@@ -33,18 +33,18 @@ std_err_file = open("/tmp/decky-dictation-std-err.log", "w")
 
 plugin_path = os.environ["DECKY_PLUGIN_DIR"]
 model_path = f"{plugin_path}/bin/vosk-model-small-en-us-0.15"
-os.environ["PYTHONPATH"] = f"{plugin_path}/bin/vosk"
-os.environ["XDG_RUNTIME_DIR"] = "/run/user/1000"
-os.environ["XDG_SESSION_TYPE"] = "wayland"
-os.environ["DISPLAY"] = (
-    ":1"  # FIXME: the steam ui seems to be 0 and the actual game 1. can we detect current window in focus maybe?
-)
+
+# Base environment variables for nerd-dictation
+base_env = os.environ.copy()
+base_env["PYTHONPATH"] = f"{plugin_path}/bin/vosk"
+base_env["XDG_RUNTIME_DIR"] = "/run/user/1000"
+base_env["XDG_SESSION_TYPE"] = "wayland"
 
 
 class Plugin:
     process = None
     # Begins dictation
-    async def begin(self, push_to_dictate: bool):
+    async def begin(self, push_to_dictate: bool, display: str = ":1", window_id: int = 0):
         try:
             if not os.path.exists(model_path):
                 logger.info("Model directory not found")
@@ -53,13 +53,30 @@ class Plugin:
                 if self.process.poll() is None:
                     logger.info("Dictation currently running, exiting early")
                     return
-            logger.info("Begin dictation")
+            logger.info(f"Begin dictation on display {display}, window {window_id}")
             timeout = ("--timeout 4", "")[push_to_dictate]
+
+            # Set DISPLAY per-process based on focused context
+            env = base_env.copy()
+            env["DISPLAY"] = display
+
+            # Focus the target window before starting dictation
+            if window_id > 0:
+                try:
+                    subprocess.run(
+                        ["xdotool", "windowfocus", "--sync", str(window_id)],
+                        env=env,
+                        timeout=2
+                    )
+                except Exception as e:
+                    logger.info(f"Could not focus window {window_id}: {e}")
+
             self.process = subprocess.Popen(
                 f'"{plugin_path}/bin/nerd-dictation/nerd-dictation" begin --vosk-model-dir="{model_path}" --numbers-min-value 2 --numbers-no-suffix --full-sentence --numbers-as-digits --numbers-use-separator {timeout} --punctuate-from-previous-timeout 2',
                 shell=True,
                 stdout=std_out_file,
                 stderr=std_err_file,
+                env=env,
             )
         except Exception:
             await Plugin.end(self)

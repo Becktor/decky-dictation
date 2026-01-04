@@ -14,7 +14,7 @@ import { VFC, useEffect, useState } from "react";
 import { FaComment } from "react-icons/fa";
 
 // Backend methods
-const beginDictation = callable<[{ push_to_dictate: boolean }], void>("begin");
+const beginDictation = callable<[{ push_to_dictate: boolean, display: string, window_id: number }], void>("begin");
 const endDictation = callable<[], void>("end");
 
 // Button constants for Steam Deck back buttons
@@ -27,6 +27,8 @@ class DeckyDictationLogic {
 	enabled: boolean = false;
 	dictating = false;
 	pushToDictate = false;
+	inGame = false;
+	focusedWindowId: number = 0;
 
 	notify = (message: string, duration: number = 1000, body: string = "") => {
 		if (!body) {
@@ -38,6 +40,14 @@ class DeckyDictationLogic {
 			duration: duration,
 			critical: true
 		});
+	}
+
+	getDisplay = (): string => {
+		return this.inGame ? ":1" : ":0";
+	}
+
+	getWindowId = (): number => {
+		return this.focusedWindowId;
 	}
 
 	handleButtonInput = (_controllerIndex: number, button: number, pressed: boolean) => {
@@ -56,7 +66,7 @@ class DeckyDictationLogic {
 			if (pressed) {
 				if (!this.dictating) {
 					this.dictating = true;
-					beginDictation({ push_to_dictate: true });
+					beginDictation({ push_to_dictate: true, display: this.getDisplay(), window_id: this.getWindowId() });
 					this.notify("Decky Dictation", 2000, "Starting speech to text input");
 				}
 			} else if (this.dictating) {
@@ -77,7 +87,7 @@ class DeckyDictationLogic {
 
 		if (button === BUTTON_L5) {
 			this.pressedAt = Date.now();
-			beginDictation({ push_to_dictate: false });
+			beginDictation({ push_to_dictate: false, display: this.getDisplay(), window_id: this.getWindowId() });
 			this.notify("Decky Dictation", 2000, "Starting speech to text input");
 		}
 		if (button === BUTTON_R5) {
@@ -124,7 +134,7 @@ const DeckyDictation: VFC<{ logic: DeckyDictationLogic }> = ({ logic }) => {
 						R5 to end speech to text input if "Push To Dictate" is disabled.
 					</div>
 					<div>
-						Currently this plugin only works in a game (first opened game if you have more opened at once; not working in home, store or steam chat ui etc).
+						Works in Steam UI, Steam chat, and in games.
 					</div>
 				</PanelSectionRow>
 			</PanelSection>
@@ -142,6 +152,14 @@ export default definePlugin(() => {
 		}
 	) as { unregister: () => void };
 
+	// Register for focus change events to detect if we're in a game or Steam UI
+	const focusRegistration = window.SteamClient.System.UI.RegisterForFocusChangeEvents(
+		(event: { focusedApp: { appid: number, windowid: number } }) => {
+			logic.inGame = event.focusedApp.appid > 0;
+			logic.focusedWindowId = event.focusedApp.windowid;
+		}
+	) as { unregister: () => void };
+
 	return {
 		name: "Decky Dictation",
 		titleView: <div style={{ display: "flex", alignItems: "center", gap: "8px" }}><FaComment /> Decky Dictation</div>,
@@ -149,6 +167,7 @@ export default definePlugin(() => {
 		icon: <FaComment />,
 		onDismount() {
 			inputRegistration.unregister();
+			focusRegistration.unregister();
 		},
 		alwaysRender: true
 	};

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Decky Dictation is a Steam Deck plugin that enables speech-to-text input using Vosk and Nerd Dictation. It runs as a Decky Loader plugin, allowing users to dictate text in games using controller buttons.
+Decky Dictation is a Steam Deck plugin that enables speech-to-text input using Vosk and Nerd Dictation. It runs as a Decky Loader plugin, allowing users to dictate text in both Steam UI and games using controller buttons.
 
 ## Build Commands
 
@@ -26,6 +26,7 @@ The Decky CLI must be available at `./cli/decky` and requires sudo on Linux.
 - Uses `@decky/ui` for UI components and `@decky/api` for plugin APIs
 - Uses `callable()` from `@decky/api` to call Python backend methods
 - Registers for controller input via `window.SteamClient.Input.RegisterForControllerInputMessages`
+- Tracks focused app via `window.SteamClient.System.UI.RegisterForFocusChangeEvents` to detect game vs Steam UI
 
 **Backend (Python)**
 - `main.py` - Plugin class with `begin()` and `end()` methods called from frontend via `callable()`
@@ -44,7 +45,10 @@ Button values for `RegisterForControllerInputMessages` callback:
 - L5 (15): Start dictation
 - R5 (16): End dictation (toggle mode only)
 
-## Key Limitations
+## Display and Window Targeting
 
-- Only works in-game, not in Steam UI (DISPLAY=:1 hardcoded)
-- Works only in first opened game when multiple games are running
+The plugin detects the focused context via `RegisterForFocusChangeEvents`:
+- **Games** (`appid > 0`): Uses `DISPLAY=:1`
+- **Steam UI/Chat** (`appid == 0`): Uses `DISPLAY=:0`
+
+Additionally, the `windowid` from the focus event is used with `xdotool windowfocus` to target the specific focused window, enabling dictation to work correctly when multiple games are running.
